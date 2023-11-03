@@ -59,25 +59,39 @@ void AsyncDnsClient::async_query(std::string_view name, QueryType type, const On
     //
 
     // TODO: It's not quite clear why res_state is needed for res_nmkquery() which just encodes
-    // the DNS query.  When thread-local instance is used, it cannot be properly destroyed
-    // by res_nclose().
+    // the DNS query.
+
 #ifdef THREAD_LOCAL_RES_STATE
-    thread_local struct __res_state res_;
-    thread_local res_state res = nullptr;
+    // Wrapper for libresolv's res_state to proper init and cleanup
+    // the instance (as a thread-local variable).
+    struct Res_state {
+      struct __res_state res;
+      bool initialized = false;
 
-    if (!res) {
-      DBG() << "initializing thread-local res_state";
-      std::memset(&res_, 0, sizeof(res_));
+      res_state get() { return &res; }
 
-      if (res_ninit(&res_) != 0) {
-        ERR() << "res_ninit: " << *query << ": " << h_errno;
-        query->cb(RESULT_ERROR, query->name, query->type, {}, {}, {});
-        query->done = true;
-        return;
+      Res_state() {
+        std::memset(&res, 0, sizeof(res));
+        initialized = (res_ninit(&res) == 0);
       }
 
-      res = &res_;
+      ~Res_state() {
+        if (initialized) {
+          res_nclose(&res);
+        }
+      }
+    };
+
+    thread_local struct Res_state res_wrapper;
+    if (!res_wrapper.initialized)
+    {
+      ERR("res_ninit error: " << *query << ": " << h_errno);
+      query->cb(RESULT_ERROR, query->name, query->type, {}, {}, {});
+      query->done = true;
+      return;
     }
+
+    res_state res = res_wrapper.get();
 #else
     struct __res_state res_;
     res_state res = &res_;
