@@ -1,6 +1,6 @@
 # Makefile
 
-CXXFLAGS = -std=c++17 -g -O0 -Wall -I$(HOME)/ws/common/include
+CXXFLAGS = -std=c++17 -g -O0 -Wall -I$(HOME)/ws/common/include -DUSE_THREAD_LOCAL_RES_STATE
 LDFLAGS  =
 LDLIBS   = -L$(HOME)/ws/common/lib -pthread -lresolv
 

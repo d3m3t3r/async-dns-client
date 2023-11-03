@@ -27,7 +27,7 @@ AsyncDnsClient::AsyncDnsClient(
 
 void AsyncDnsClient::start()
 {
-  INFO() << "Starting.";
+  INFO() << "starting";
 
   for (std::size_t i = 0; i < n_workers_; ++i) {
     workers_.emplace_back([this]() { io_.run(); });
@@ -38,13 +38,13 @@ void AsyncDnsClient::start()
 
 void AsyncDnsClient::stop()
 {
-  INFO() << "Stopping.";
+  INFO() << "stopping";
 
   socket_.close();
   io_.stop();
 
-  for (std::size_t i = 0; i < n_workers_; ++i) {
-    workers_[i].join();
+  for (auto&& worker: workers_) {
+    worker.join();
   }
 
   workers_.clear();
@@ -58,19 +58,19 @@ void AsyncDnsClient::async_query(std::string_view name, QueryType type, const On
     // Construct the binary DNS request.
     //
 
-    //XXX not quite clear why res_state is needed got res_nmkquery()
-#define THREAD_LOCAL_RES
-
+    // TODO: It's not quite clear why res_state is needed for res_nmkquery() which just encodes
+    // the DNS query.  When thread-local instance is used, it cannot be properly destroyed
+    // by res_nclose().
 #ifdef THREAD_LOCAL_RES_STATE
     thread_local struct __res_state res_;
     thread_local res_state res = nullptr;
 
     if (!res) {
-      DBG() << "initializing res_state";
+      DBG() << "initializing thread-local res_state";
       std::memset(&res_, 0, sizeof(res_));
 
       if (res_ninit(&res_) != 0) {
-        ERR() << "res_ninit error: " << *query << ": " << h_errno;
+        ERR() << "res_ninit: " << *query << ": " << h_errno;
         query->cb(RESULT_ERROR, query->name, query->type, {}, {}, {});
         query->done = true;
         return;
@@ -85,7 +85,7 @@ void AsyncDnsClient::async_query(std::string_view name, QueryType type, const On
     DBG() << "initializing res_state";
     std::memset(&res_, 0, sizeof(res_));
     if (res_ninit(&res_) != 0) {
-      ERR() << "res_ninit error: " << *query << ": " << h_errno;
+      ERR() << "res_ninit: " << *query << ": " << h_errno;
       query->cb(RESULT_ERROR, query->name, query->type, {}, {}, {});
       query->done = true;
       return;
@@ -100,7 +100,7 @@ void AsyncDnsClient::async_query(std::string_view name, QueryType type, const On
         nullptr,
         query->request.data(), query->request.size());
     if (req_len < 0) {
-      ERR() << "res_nmkquery error: " << *query << ": " << h_errno;
+      ERR() << "res_nmkquery: " << *query << ": " << h_errno;
       query->cb(RESULT_ERROR, query->name, query->type, {}, {}, {});
       query->done = true;
       return;
@@ -171,7 +171,7 @@ AsyncDnsClient::Query::Query(
 
 void AsyncDnsClient::start_receiving()
 {
-    // These are shared instances but it is fine because only a single thread 
+    // These are shared instances but it is fine because only a single thread
     // is receiving at a time.
     static unsigned char response[PACKETSZ];
     static boost::asio::ip::udp::endpoint remote;
@@ -182,8 +182,9 @@ void AsyncDnsClient::start_receiving()
         0,
         boost::asio::bind_executor(io_strand_, [this](auto err, auto received) {
           if (err) {
-            ERR() << "async_receive_from: " << err.message();
-            start_receiving();
+            if (err != boost::asio::error::operation_aborted) {
+              ERR() << "async_receive_from: " << err.message();
+            }
             return;
           }
 
@@ -281,9 +282,11 @@ std::ostream& operator<<(std::ostream& os, const AsyncDnsClient::QueryType& type
 {
   switch (type) {
     case AsyncDnsClient::QueryType::TYPE_A:
-      os << "A"; break;
+      os << "A";
+      break;
     case AsyncDnsClient::QueryType::TYPE_AAAA:
-      os << "AAAA"; break;
+      os << "AAAA";
+      break;
   };
   return os;
 }
@@ -292,11 +295,14 @@ std::ostream& operator<<(std::ostream& os, const AsyncDnsClient::QueryResult& re
 {
   switch (result) {
     case AsyncDnsClient::QueryResult::RESULT_SUCCESS:
-      os << "SUCCESS"; break;
+      os << "SUCCESS";
+      break;
     case AsyncDnsClient::QueryResult::RESULT_TIMEOUT:
-      os << "TIMEOUT"; break;
+      os << "TIMEOUT";
+      break;
     case AsyncDnsClient::QueryResult::RESULT_ERROR:
-      os << "ERROR"; break;
+      os << "ERROR";
+      break;
   }
   return os;
 }
