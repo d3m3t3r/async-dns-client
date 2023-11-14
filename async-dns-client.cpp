@@ -13,6 +13,31 @@
 #include <resolv.h>
 
 
+namespace {
+
+// Wrapper for libresolv's res_state to properly initialize and cleanup
+// the instance (as a thread-local variable).
+struct ResStateWrapper {
+  struct __res_state res;
+  bool initialized = false;
+
+  res_state get() { return &res; }
+
+  ResStateWrapper() {
+    std::memset(&res, 0, sizeof(res));
+    initialized = (res_ninit(&res) == 0);
+  }
+
+  ~ResStateWrapper() {
+    if (initialized) {
+      res_nclose(&res);
+    }
+  }
+};
+
+}  // namespace
+
+
 AsyncDnsClient::AsyncDnsClient(
         std::string_view ns_ip, unsigned short ns_port,
         std::size_t n_workers,
@@ -58,71 +83,28 @@ void AsyncDnsClient::async_query(std::string_view name, QueryType type, const On
     // Construct the binary DNS request.
     //
 
-    // TODO: It's not quite clear why res_state is needed for res_nmkquery() which just encodes
-    // the DNS query.
-
-#ifdef THREAD_LOCAL_RES_STATE
-    // Wrapper for libresolv's res_state to proper init and cleanup
-    // the instance (as a thread-local variable).
-    struct Res_state {
-      struct __res_state res;
-      bool initialized = false;
-
-      res_state get() { return &res; }
-
-      Res_state() {
-        std::memset(&res, 0, sizeof(res));
-        initialized = (res_ninit(&res) == 0);
-      }
-
-      ~Res_state() {
-        if (initialized) {
-          res_nclose(&res);
-        }
-      }
-    };
-
-    thread_local struct Res_state res_wrapper;
-    if (!res_wrapper.initialized)
+    thread_local struct ResStateWrapper res;
+    if (!res.initialized)
     {
-      ERR("res_ninit error: " << *query << ": " << h_errno);
+      ERR() << "res_ninit error: " << *query << ": " << hstrerror(res.get()->res_h_errno);
       query->cb(RESULT_ERROR, query->name, query->type, {}, {}, {});
       query->done = true;
       return;
     }
-
-    res_state res = res_wrapper.get();
-#else
-    struct __res_state res_;
-    res_state res = &res_;
-
-    DBG() << "initializing res_state";
-    std::memset(&res_, 0, sizeof(res_));
-    if (res_ninit(&res_) != 0) {
-      ERR() << "res_ninit: " << *query << ": " << h_errno;
-      query->cb(RESULT_ERROR, query->name, query->type, {}, {}, {});
-      query->done = true;
-      return;
-    }
-#endif
 
     int req_len = res_nmkquery(
-        res,
+        res.get(),
         ns_o_query,
         query->name.c_str(), ns_c_in, (type == TYPE_A ? ns_t_a : ns_t_aaaa),
         nullptr, 0,
         nullptr,
         query->request.data(), query->request.size());
     if (req_len < 0) {
-      ERR() << "res_nmkquery: " << *query << ": " << h_errno;
+      ERR() << "res_nmkquery: " << *query << ": " << hstrerror(res.get()->res_h_errno);
       query->cb(RESULT_ERROR, query->name, query->type, {}, {}, {});
       query->done = true;
       return;
     }
-
-#ifndef THREAD_LOCAL_RES_STATE
-    res_nclose(res);
-#endif
 
     query->request.resize(req_len);
     query->id = ns_get16(query->request.data());
