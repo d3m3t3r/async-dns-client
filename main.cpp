@@ -19,7 +19,7 @@ void usage(const char* prog)
                "      -w N     Number of thread workers (0 == #cores, default: 0)\n"
                "      -t MS    Query timeout in milliseconds (default: 2000)\n"
                "      -6       Make AAAA query rather than A\n"
-               "      -v       Verbose logging\n";
+               "      -v       Verbose logging (use multiple times)\n";
 }
 
 int main(int argc, char* argv[])
@@ -29,7 +29,7 @@ int main(int argc, char* argv[])
   std::size_t n_workers = 0;
   unsigned int timeout_ms = 2000;
   bool ipv6 = false;
-  bool verbose = false;
+  unsigned int verbose = 0;
 
   int opt;
   while ((opt = getopt(argc, argv, "s:p:w:t:6vh")) != -1) {
@@ -50,7 +50,7 @@ int main(int argc, char* argv[])
         ipv6 = true;
         break;
       case 'v':
-        verbose = true;
+        ++verbose;
         break;
       case 'h':
         usage(argv[0]);
@@ -66,9 +66,8 @@ int main(int argc, char* argv[])
     return 0;
   }
 
-  if (verbose) {
-    logger().set_threshold(Logger::Level::FATAL);
-  }
+  // Set the logging threshold to ERROR.
+  logger().set_threshold(Logger::Level((unsigned int)Logger::Level::ERROR + verbose));
 
   if (n_workers == 0) {
     n_workers = std::thread::hardware_concurrency();

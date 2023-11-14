@@ -12,11 +12,11 @@
 
 
 #define LOG(LEVEL) \
-        if (logger().get_threshold() <= (LEVEL)) Logger::Message(logger(), (LEVEL))
+        if (logger().get_threshold() >= (LEVEL)) Logger::Message(logger(), (LEVEL))
 
 #define DBG()   LOG(Logger::Level::DEBUG)
 #define INFO()  LOG(Logger::Level::INFO)
-#define WARN()  LOG(Logger::Level::WARN)
+#define WARN()  LOG(Logger::Level::WARNING)
 #define ERR()   LOG(Logger::Level::ERROR)
 #define FATAL() LOG(Logger::Level::FATAL)
 
