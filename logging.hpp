@@ -12,7 +12,8 @@
 
 
 #define LOG(LEVEL) \
-        if (logger().get_threshold() >= (LEVEL)) Logger::Message(logger(), (LEVEL))
+        if (Logger::instance().get_threshold() >= (LEVEL)) \
+          Logger::Message(Logger::instance(), (LEVEL))
 
 #define DBG()   LOG(Logger::Level::DEBUG)
 #define INFO()  LOG(Logger::Level::INFO)
@@ -77,6 +78,11 @@ public:
     }
   };
 
+  static Logger& instance() {
+    static Logger logger;
+    return logger;
+  }
+
   Logger(Level threshold = Level::FATAL, bool use_stderr = true)
       : threshold_(threshold), os_(use_stderr ? std::cerr : std::cout)
   {}
@@ -102,10 +108,4 @@ const Logger::Message& operator<<(const Logger::Message& msg, const T& t)
 {
   msg.oss_ << t;
   return msg;
-}
-
-[[maybe_unused]] static Logger& logger()
-{
-  static Logger logger;
-  return logger;
 }

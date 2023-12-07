@@ -67,7 +67,7 @@ int main(int argc, char* argv[])
   }
 
   // Set the logging threshold to ERROR.
-  logger().set_threshold(Logger::Level((unsigned int)Logger::Level::ERROR + verbose));
+  Logger::instance().set_threshold(Logger::Level((unsigned int)Logger::Level::ERROR + verbose));
 
   if (n_workers == 0) {
     n_workers = std::thread::hardware_concurrency();
