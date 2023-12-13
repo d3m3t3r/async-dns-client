@@ -9,7 +9,6 @@
 #include <chrono>
 #include <cstring>  // std::memset
 
-#include <arpa/nameser.h>
 #include <resolv.h>
 
 
@@ -77,8 +76,9 @@ void AsyncDnsClient::stop()
 
 void AsyncDnsClient::async_query(std::string_view name, QueryType type, const OnFinishedCallback& on_finished_cb)
 {
-    auto query = std::make_shared<Query>(io_strand_, name, type, on_finished_cb);
+  auto query = std::make_shared<Query>(io_strand_, name, type, on_finished_cb);
 
+  post(io_, [this, query]() {
     //
     // Construct the binary DNS request.
     //
@@ -95,7 +95,7 @@ void AsyncDnsClient::async_query(std::string_view name, QueryType type, const On
     int req_len = res_nmkquery(
         res.get(),
         ns_o_query,
-        query->name.c_str(), ns_c_in, (type == TYPE_A ? ns_t_a : ns_t_aaaa),
+        query->name.c_str(), ns_c_in, (query->type == TYPE_A ? ns_t_a : ns_t_aaaa),
         nullptr, 0,
         nullptr,
         query->request.data(), query->request.size());
@@ -150,6 +150,7 @@ void AsyncDnsClient::async_query(std::string_view name, QueryType type, const On
                 }
               }));
         });
+  });
 }
 
 AsyncDnsClient::Query::Query(
@@ -167,14 +168,9 @@ AsyncDnsClient::Query::Query(
 
 void AsyncDnsClient::start_receiving()
 {
-    // These are shared instances but it is fine because only a single thread
-    // is receiving at a time.
-    static unsigned char response[PACKETSZ];
-    static boost::asio::ip::udp::endpoint remote;
-
     socket_.async_receive_from(
-        boost::asio::buffer(response),
-        remote,
+        boost::asio::buffer(response_),
+        remote_,
         0,
         boost::asio::bind_executor(io_strand_, [this](auto err, auto received) {
           if (err) {
@@ -184,7 +180,7 @@ void AsyncDnsClient::start_receiving()
             return;
           }
 
-          if (remote != nameserver_) {
+          if (remote_ != nameserver_) {
             ERR() << "async_receive_from: unexpected endpoint";
             start_receiving();
             return;
@@ -195,13 +191,13 @@ void AsyncDnsClient::start_receiving()
           //
           ns_msg handle;
 
-          if (ns_initparse(response, received, &handle) != 0) {
+          if (ns_initparse(response_.data(), received, &handle) != 0) {
             ERR() << "ns_initparse: " << std::strerror(errno);
             start_receiving();
             return;
           }
 
-          auto id = ns_get16(response);
+          auto id = ns_get16(response_.data());
           int rcode = ns_msg_getflag(handle, ns_f_rcode);
 
           DBG() << "query response: id=" << id

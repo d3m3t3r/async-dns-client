@@ -14,8 +14,10 @@
 #include <memory>
 #include <thread>
 #include <vector>
+#include <array>
 #include <map>
 
+#include <arpa/nameser.h>
 
 //
 // Asynchronnous DNS client
@@ -72,6 +74,8 @@ private:
   boost::asio::ip::udp::socket socket_;
   std::vector<std::thread> workers_;
   std::map<int, std::shared_ptr<Query>> queries_;
+  std::array<unsigned char, PACKETSZ> response_;
+  boost::asio::ip::udp::endpoint remote_;
 };
 
 std::ostream& operator<<(std::ostream& os, const AsyncDnsClient::Query& query);
